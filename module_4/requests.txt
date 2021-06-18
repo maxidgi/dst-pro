@@ -1,0 +1,166 @@
+﻿4.1
+
+SELECT city,
+       count(*)
+FROM dst_project.airports
+GROUP BY city
+HAVING count(*) > 1
+4.2.1
+SELECT count(DISTINCT status)
+FROM dst_project.flights
+4.2.2
+SELECT count(*)
+FROM dst_project.flights
+WHERE status = 'Departed'
+4.2.3
+SELECT count(DISTINCT seat_no)
+FROM dst_project.seats
+WHERE aircraft_code = '773'
+4.2.4
+SELECT count(*)
+FROM dst_project.flights
+WHERE status = 'Arrived'
+  AND actual_arrival BETWEEN '2017-04-01' AND '2017-09-01'
+4.3.1
+SELECT count(*)
+FROM dst_project.flights
+WHERE status = 'Cancelled'
+4.3.2
+SELECT substring(model, 1, position(' ' in model) - 1) vendor,
+       count(*)
+FROM dst_project.aircrafts
+GROUP BY vendor
+4.3.3
+SELECT substring(timezone, 1, position('/' in timezone) - 1) area,
+       count(*)
+FROM dst_project.airports
+GROUP BY area
+4.3.4
+SELECT flight_id
+FROM dst_project.flights
+WHERE actual_arrival IS NOT NULL
+  AND scheduled_arrival IS NOT NULL
+  AND status = 'Arrived'
+ORDER BY actual_arrival - scheduled_arrival DESC
+LIMIT 1
+
+4.4.1
+SELECT min(scheduled_departure)
+FROM dst_project.flights
+4.4.2
+SELECT date_part('minute', scheduled_arrival - scheduled_departure) + date_part('hour', scheduled_arrival - scheduled_departure) * 60 AS minutes
+FROM dst_project.flights
+WHERE scheduled_arrival IS NOT NULL
+  AND scheduled_departure IS NOT NULL
+ORDER BY scheduled_arrival - scheduled_departure DESC
+LIMIT 1
+4.4.3
+SELECT departure_airport,
+       arrival_airport
+FROM dst_project.flights
+WHERE scheduled_arrival IS NOT NULL
+  AND scheduled_departure IS NOT NULL
+  AND status = 'Scheduled'
+ORDER BY scheduled_arrival - scheduled_departure DESC
+LIMIT 1
+4.4.4
+SELECT DATE_TRUNC('minute', avg(actual_arrival - actual_departure))
+FROM dst_project.flights
+WHERE actual_arrival IS NOT NULL
+  AND actual_departure IS NOT NULL
+4.5.1
+SELECT fare_conditions,
+       count(*)
+FROM dst_project.seats
+WHERE aircraft_code = 'SU9'
+GROUP BY fare_conditions
+ORDER BY 2 DESC
+4.5.2
+SELECT min(total_amount)
+FROM dst_project.bookings
+
+4.5.3
+SELECT bp.seat_no
+FROM dst_project.tickets t
+JOIN dst_project.boarding_passes bp ON t.ticket_no = bp.ticket_no
+WHERE passenger_id = '4313 788533'
+
+5.1.1
+
+SELECT count(*)
+FROM dst_project.flights
+WHERE arrival_airport = 'AAQ'
+  AND date_part('year', actual_arrival) = 2017
+5.1.2
+
+SELECT count(*)
+FROM dst_project.flights
+WHERE departure_airport = 'AAQ'
+  AND date_trunc('month', scheduled_departure) in ('2017-01-01',
+                                                   '2017-02-01',
+                                                   '2017-12-01')
+  AND actual_arrival IS NOT NULL
+5.1.3
+
+SELECT count(*)
+FROM dst_project.flights
+WHERE departure_airport = 'AAQ'
+  AND status = 'Cancelled'
+5.1.4
+
+SELECT count(flight_no)
+FROM dst_project.flights f
+JOIN dst_project.airports a ON a.airport_code = f.arrival_airport
+WHERE f.departure_airport = 'AAQ'
+  AND a.city != 'Moscow'
+5.1.5
+
+SELECT DISTINCT f.aircraft_code,
+                a.seats
+FROM dst_project.flights f
+JOIN
+  (SELECT aircraft_code,
+          count(*) seats
+   FROM dst_project.seats
+   GROUP BY aircraft_code) a ON a.aircraft_code = f.aircraft_code
+WHERE f.departure_airport = 'AAQ'
+ORDER BY a.seats DESC
+LIMIT 1
+
+Итоговый запрос по БД
+
+SELECT f.flight_id,
+       f.flight_no,
+	   f.departure_airport,
+       f.arrival_airport,
+       f.aircraft_code,
+	   sum(tf.amount) proceeds, 
+       sum(tf.amount)*0.26 fuel_part_of_tickets_cost,
+       count(tf.ticket_no) busy_seats,
+       s.all_seats,
+       100*count(tf.ticket_no) / s.all_seats AS busy_seats_percent,
+       actual_arrival,
+       CASE
+           WHEN f.aircraft_code = '733' THEN 26300*2.526*(date_part('hour', actual_arrival - actual_departure) + date_part('minute', actual_arrival - actual_departure)/60)
+           WHEN f.aircraft_code = 'SU9' THEN 26300*1.800*(date_part('hour', actual_arrival - actual_departure) + date_part('minute', actual_arrival - actual_departure)/60)
+       END AS fuel_cost_for_flight,
+       sum(tf.amount)*0.26 /
+       CASE
+           WHEN f.aircraft_code = '733' THEN 26300*2.526*(date_part('hour', actual_arrival - actual_departure) + date_part('minute', actual_arrival - actual_departure)/60)
+           WHEN f.aircraft_code = 'SU9' THEN 26300*1.800*(date_part('hour', actual_arrival - actual_departure) + date_part('minute', actual_arrival - actual_departure)/60)
+       END AS fuel_overpayment
+FROM dst_project.flights f
+JOIN dst_project.ticket_flights tf ON f.flight_id = tf.flight_id
+JOIN
+  (SELECT aircraft_code,
+          count(seat_no) all_seats
+   FROM dst_project.seats
+   GROUP BY aircraft_code) s ON s.aircraft_code = f.aircraft_code
+WHERE f.departure_airport = 'AAQ'
+  AND (date_trunc('month', f.actual_departure) in ('2017-01-01',
+                                                    '2017-02-01',
+                                                    '2016-12-01'))
+GROUP BY f.flight_id,
+         f.aircraft_code,
+         s.all_seats
+ORDER BY busy_seats_percent
